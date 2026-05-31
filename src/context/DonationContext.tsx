@@ -1,6 +1,7 @@
 "use client";
 
-import React, { createContext, useContext, useState, ReactNode } from "react";
+import React, { createContext, useContext, useState, ReactNode, useEffect } from "react";
+import { createClient } from "@/utils/supabase/client";
 
 export type DonationStatus = "Pending Pickup" | "In Transit" | "Delivered";
 
@@ -20,7 +21,7 @@ export type Donation = {
 };
 
 export type NGO = {
-  id: number;
+  id: string;
   name: string;
   address: string;
   email: string;
@@ -30,83 +31,185 @@ export type NGO = {
   status: "Pending" | "Approved";
 };
 
-// Initial default approved NGOs
-const INITIAL_NGOS: NGO[] = [
-  { id: 1, name: "Hope Foundation", address: "12 Charity Lane, City Center", email: "contact@hope.org", phone: "1234567890", regId: "REG123", capacity: "200", status: "Approved" },
-  { id: 2, name: "Food Savers NGO", address: "89 Green Avenue, North District", email: "hello@foodsavers.org", phone: "0987654321", regId: "REG456", capacity: "500", status: "Approved" },
-  { id: 3, name: "Care & Share", address: "45 Compassion Street, East Side", email: "info@careshare.org", phone: "1122334455", regId: "REG789", capacity: "150", status: "Approved" },
-];
-
 type DonationContextType = {
   donations: Donation[];
   ngos: NGO[];
   addDonation: (donation: Omit<Donation, "id" | "status" | "volunteerAssigned" | "createdAt" | "ngoAddress" | "verificationCode">) => void;
   acceptDonation: (id: number, volunteerName: string) => void;
   claimDonation: (id: number) => void;
-  registerNgo: (ngo: Omit<NGO, "id" | "status">) => void;
-  approveNgo: (id: number) => void;
+  registerNgo: (ngo: Omit<NGO, "id" | "status">) => void; // This is now mostly handled by the register page directly, keeping here for compatibility
+  approveNgo: (id: string) => void;
+  loading: boolean;
 };
 
 const DonationContext = createContext<DonationContextType | undefined>(undefined);
 
 export function DonationProvider({ children }: { children: ReactNode }) {
   const [donations, setDonations] = useState<Donation[]>([]);
-  const [ngos, setNgos] = useState<NGO[]>(INITIAL_NGOS);
+  const [ngos, setNgos] = useState<NGO[]>([]);
+  const [loading, setLoading] = useState(true);
+  const supabase = createClient();
 
-  const addDonation = (data: Omit<Donation, "id" | "status" | "volunteerAssigned" | "createdAt" | "ngoAddress" | "verificationCode">) => {
-    // Only look up among approved NGOs
+  // Fetch initial data
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+
+      // 1. Fetch NGOs (profiles with role 'ngo')
+      const { data: ngoData, error: ngoError } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("role", "ngo");
+
+      if (ngoError) throw ngoError;
+
+      if (ngoData) {
+        const mappedNgos: NGO[] = ngoData.map((n: any) => ({
+          id: n.id,
+          name: n.name,
+          address: n.address,
+          email: n.email,
+          phone: n.phone,
+          regId: n.reg_id || "",
+          capacity: n.capacity || "",
+          status: n.is_verified ? "Approved" : "Pending",
+        }));
+        setNgos(mappedNgos);
+      }
+
+      // 2. Fetch Donations
+      // For simplicity in UI without writing complex JOINs, we store some denormalized names or fetch relationships.
+      // Assuming donor_id and ngo_id relationships in DB. We will fetch with basic profiles join.
+      const { data: donData, error: donError } = await supabase
+        .from("donations")
+        .select(`
+          id, food_name, quantity, expiry_date, pickup_address, ngo_address, status, verification_code, created_at,
+          donor:profiles!donations_donor_id_fkey(id, name),
+          ngo:profiles!donations_ngo_id_fkey(id, name),
+          volunteer:profiles!donations_volunteer_id_fkey(id, name)
+        `)
+        .order("created_at", { ascending: false });
+
+      if (donError) throw donError;
+
+      if (donData) {
+        const mappedDonations: Donation[] = donData.map((d: any) => ({
+          id: d.id,
+          foodName: d.food_name,
+          quantity: d.quantity,
+          expiryDate: d.expiry_date,
+          donorName: d.donor?.name || "Unknown Donor",
+          pickupAddress: d.pickup_address,
+          deliveryNGO: d.ngo?.name || "Unknown NGO",
+          ngoAddress: d.ngo_address,
+          status: d.status,
+          volunteerAssigned: d.volunteer?.name || "Not Assigned",
+          verificationCode: d.verification_code,
+          createdAt: new Date(d.created_at).toLocaleDateString(),
+        }));
+        setDonations(mappedDonations);
+      }
+
+    } catch (error) {
+      console.error("Error fetching data:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const addDonation = async (data: Omit<Donation, "id" | "status" | "volunteerAssigned" | "createdAt" | "ngoAddress" | "verificationCode">) => {
     const targetNgo = ngos.find(n => n.name === data.deliveryNGO && n.status === "Approved");
-    const ngoAddress = targetNgo ? targetNgo.address : "Unknown Address";
+    if (!targetNgo) return;
+
     const generatedCode = Math.floor(100000 + Math.random() * 900000).toString();
 
-    const newDonation: Donation = {
-      ...data,
-      id: Date.now(),
-      status: "Pending Pickup",
-      volunteerAssigned: "Not Assigned",
-      createdAt: new Date().toLocaleDateString(),
-      ngoAddress: ngoAddress,
-      verificationCode: generatedCode
-    };
-    
-    setDonations((prev) => [newDonation, ...prev]);
+    // Get current user id
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      alert("You must be logged in to donate.");
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("donations")
+        .insert({
+          food_name: data.foodName,
+          quantity: data.quantity,
+          expiry_date: data.expiryDate,
+          pickup_address: data.pickupAddress,
+          donor_id: user.id,
+          ngo_id: targetNgo.id,
+          ngo_address: targetNgo.address,
+          status: "Pending Pickup",
+          verification_code: generatedCode
+        });
+
+      if (error) throw error;
+      fetchData(); // Refresh UI
+    } catch (err: any) {
+      console.error("Error adding donation:", err.message);
+    }
   };
 
-  const acceptDonation = (id: number, volunteerName: string) => {
-    setDonations((prev) =>
-      prev.map((d) =>
-        d.id === id ? { ...d, status: "In Transit", volunteerAssigned: volunteerName } : d
-      )
-    );
+  const acceptDonation = async (id: number, volunteerName: string) => {
+    // Get current user id
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    try {
+      const { error } = await supabase
+        .from("donations")
+        .update({
+          status: "In Transit",
+          volunteer_id: user.id
+        })
+        .eq("id", id);
+
+      if (error) throw error;
+      fetchData(); // Refresh UI
+    } catch (err: any) {
+      console.error("Error accepting donation:", err.message);
+    }
   };
 
-  const claimDonation = (id: number) => {
-    setDonations((prev) =>
-      prev.map((d) =>
-        d.id === id ? { ...d, status: "Delivered" } : d
-      )
-    );
+  const claimDonation = async (id: number) => {
+    try {
+      const { error } = await supabase
+        .from("donations")
+        .update({ status: "Delivered" })
+        .eq("id", id);
+
+      if (error) throw error;
+      fetchData(); // Refresh UI
+    } catch (err: any) {
+      console.error("Error claiming donation:", err.message);
+    }
   };
 
-  const registerNgo = (data: Omit<NGO, "id" | "status">) => {
-    const newNgo: NGO = {
-      ...data,
-      id: Date.now(),
-      status: "Pending"
-    };
-    setNgos((prev) => [...prev, newNgo]);
-  };
+  // Deprecated since handled in register/page.tsx
+  const registerNgo = (data: Omit<NGO, "id" | "status">) => {};
 
-  const approveNgo = (id: number) => {
-    setNgos((prev) =>
-      prev.map((n) =>
-        n.id === id ? { ...n, status: "Approved" } : n
-      )
-    );
+  const approveNgo = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update({ is_verified: true })
+        .eq("id", id);
+
+      if (error) throw error;
+      fetchData(); // Refresh UI
+    } catch (err: any) {
+      console.error("Error approving NGO:", err.message);
+    }
   };
 
   return (
-    <DonationContext.Provider value={{ donations, ngos, addDonation, acceptDonation, claimDonation, registerNgo, approveNgo }}>
+    <DonationContext.Provider value={{ donations, ngos, addDonation, acceptDonation, claimDonation, registerNgo, approveNgo, loading }}>
       {children}
     </DonationContext.Provider>
   );

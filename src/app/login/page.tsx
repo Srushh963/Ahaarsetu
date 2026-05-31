@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Sprout, Heart, Truck, Building, ShieldCheck, LogIn, Lock, Mail, ArrowRight, Eye, EyeOff } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/utils/supabase/client";
 
 export default function LoginPage() {
   const [role, setRole] = useState<"donor" | "volunteer" | "ngo" | "admin">("donor");
@@ -12,33 +13,55 @@ export default function LoginPage() {
   const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
   const router = useRouter();
+  const supabase = createClient();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatus("idle");
     setErrorMsg("");
 
+    // Special hardcoded admin check
     if (role === "admin") {
       if (form.email !== "srushtishapure@gmail.com" || form.password !== "1122") {
         setStatus("error");
         setErrorMsg("Invalid Admin Credentials. Access Denied.");
         return;
       }
+      setStatus("success");
+      setTimeout(() => router.push("/admin"), 1500);
+      return;
     }
 
     setStatus("submitting");
 
-    setTimeout(() => {
-      if (role === "admin") {
-        router.push("/admin");
-      } else if (role === "donor") {
-        router.push("/donor");
-      } else if (role === "volunteer") {
-        router.push("/volunteer");
-      } else {
-        router.push("/ngo");
-      }
-    }, 2000);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: form.email,
+        password: form.password,
+      });
+
+      if (error) throw error;
+
+      // Ensure the logged-in user matches the role they selected (Optional strict check)
+      // For now, we trust the tab they selected for routing, but we can also read data.user.user_metadata.role
+
+      setStatus("success");
+      
+      setTimeout(() => {
+        if (role === "donor") {
+          router.push("/donor");
+        } else if (role === "volunteer") {
+          router.push("/volunteer");
+        } else {
+          router.push("/ngo");
+        }
+      }, 1500);
+
+    } catch (err: any) {
+      console.error("Login Error:", err.message);
+      setStatus("error");
+      setErrorMsg(err.message || "Invalid email or password.");
+    }
   };
 
   return (
@@ -73,7 +96,6 @@ export default function LoginPage() {
             Select Your Workspace Role
           </label>
           <div className="grid grid-cols-4 gap-2">
-            {/* Donor Role button */}
             <button
               type="button"
               onClick={() => setRole("donor")}
@@ -86,7 +108,6 @@ export default function LoginPage() {
               <span className="text-[10px] font-bold">Donor</span>
             </button>
 
-            {/* Volunteer Role button */}
             <button
               type="button"
               onClick={() => setRole("volunteer")}
@@ -99,7 +120,6 @@ export default function LoginPage() {
               <span className="text-[10px] font-bold">Volunteer</span>
             </button>
 
-            {/* NGO Role button */}
             <button
               type="button"
               onClick={() => setRole("ngo")}
@@ -112,7 +132,6 @@ export default function LoginPage() {
               <span className="text-[10px] font-bold">NGO</span>
             </button>
 
-            {/* Admin Role button */}
             <button
               type="button"
               onClick={() => setRole("admin")}

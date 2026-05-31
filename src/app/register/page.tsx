@@ -4,13 +4,13 @@ import { useState, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Sprout, Heart, Truck, Building, UserPlus, CheckCircle2, Mail, Phone, Lock, Eye, EyeOff, MapPin } from "lucide-react";
-import { useDonations } from "@/context/DonationContext";
+import { createClient } from "@/utils/supabase/client";
 
 function RegisterFormContent() {
   const searchParams = useSearchParams();
   const initialRole = searchParams.get("role") as "donor" | "volunteer" | "ngo" | null;
   
-  const { registerNgo } = useDonations();
+  const supabase = createClient();
 
   const [role, setRole] = useState<"donor" | "volunteer" | "ngo">(() => {
     if (initialRole && ["donor", "volunteer", "ngo"].includes(initialRole)) {
@@ -19,7 +19,8 @@ function RegisterFormContent() {
     return "donor";
   });
   const [showPassword, setShowPassword] = useState(false);
-  const [status, setStatus] = useState<"idle" | "submitting" | "success">("idle");
+  const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
+  const [errorMsg, setErrorMsg] = useState("");
 
   // Form States
   const [commonFields, setCommonFields] = useState({
@@ -37,22 +38,48 @@ function RegisterFormContent() {
   const [ngoRegId, setNgoRegId] = useState("");
   const [ngoCapacity, setNgoCapacity] = useState("50");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatus("submitting");
-    setTimeout(() => {
-      if (role === "ngo") {
-        registerNgo({
-          name: commonFields.name,
-          email: commonFields.email,
-          phone: commonFields.phone,
-          address: commonFields.address,
-          regId: ngoRegId,
-          capacity: ngoCapacity
-        });
-      }
+    setErrorMsg("");
+
+    try {
+      // 1. Sign up the user in Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: commonFields.email,
+        password: commonFields.password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        }
+      });
+
+      if (authError) throw authError;
+      if (!authData.user) throw new Error("Could not create user account. Please try again.");
+
+      // 2. Call the secure RPC function to insert the profile
+      // This works even before email is confirmed because the function uses SECURITY DEFINER
+      const { error: profileError } = await supabase.rpc("create_user_profile", {
+        user_id: authData.user.id,
+        user_role: role,
+        user_name: commonFields.name,
+        user_email: commonFields.email,
+        user_phone: commonFields.phone,
+        user_address: commonFields.address,
+        p_donor_type: role === "donor" ? donorType : null,
+        p_vehicle_type: role === "volunteer" ? vehicleType : null,
+        p_availability: role === "volunteer" ? availability : null,
+        p_reg_id: role === "ngo" ? ngoRegId : null,
+        p_capacity: role === "ngo" ? ngoCapacity : null,
+      });
+
+      if (profileError) throw profileError;
+
       setStatus("success");
-    }, 2000);
+    } catch (err: any) {
+      console.error("Registration Error:", err.message);
+      setErrorMsg(err.message || "An error occurred during registration.");
+      setStatus("error");
+    }
   };
 
   return (
@@ -129,10 +156,10 @@ function RegisterFormContent() {
       <div className="bg-white dark:bg-stone-900 border border-stone-200/60 dark:border-stone-850 rounded-3xl p-6 sm:p-8 shadow-md">
         {status === "success" ? (
           <div className="text-center py-8 space-y-4">
-            <CheckCircle2 className="w-16 h-16 text-primary mx-auto animate-bounce" />
-            <h3 className="text-xl font-bold text-stone-900 dark:text-white">Registration Submitted!</h3>
+            <CheckCircle2 className="w-16 h-16 text-emerald-500 mx-auto animate-bounce" />
+            <h3 className="text-xl font-bold text-stone-900 dark:text-white">Check Your Email!</h3>
             <p className="text-xs sm:text-sm text-stone-600 dark:text-stone-400 max-w-sm mx-auto leading-relaxed">
-              Welcome to AaharSetu! Your account details have been successfully recorded.
+              We have sent a verification link to your email address. Please click it to verify your account and complete registration.
             </p>
             {role === "ngo" && (
               <p className="text-xs text-amber-600 dark:text-amber-400 font-semibold bg-amber-500/10 p-3 rounded-xl mt-4">
@@ -142,7 +169,7 @@ function RegisterFormContent() {
             <div className="pt-4">
               <Link
                 href="/login"
-                className="inline-flex items-center gap-1.5 rounded-xl bg-primary text-white text-xs sm:text-sm font-bold px-6 py-3 shadow-md hover:bg-primary-hover transition-colors"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-white text-stone-900 border border-stone-200 shadow-sm hover:bg-stone-50 dark:bg-stone-900 dark:text-white dark:border-stone-700 dark:hover:bg-stone-800 text-xs sm:text-sm font-bold px-6 py-3 transition-colors"
               >
                 Go to Sign In Page
               </Link>
@@ -150,6 +177,12 @@ function RegisterFormContent() {
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
+            {status === "error" && (
+              <div className="p-3 text-xs text-red-600 bg-red-50 dark:bg-red-900/20 dark:text-red-400 rounded-xl font-bold text-center">
+                {errorMsg}
+              </div>
+            )}
+
             {/* Common Name Field */}
             <div className="space-y-1.5">
               <label htmlFor="name" className="text-xs font-bold text-stone-700 dark:text-stone-300 uppercase tracking-wider">
@@ -360,7 +393,7 @@ function RegisterFormContent() {
             >
               {status === "submitting" ? (
                 <>
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <div className="w-5 h-5 border-2 border-stone-400 border-t-transparent rounded-full animate-spin" />
                   Registering...
                 </>
               ) : (
