@@ -10,7 +10,7 @@ export default function AdminDashboard() {
   const approvedNgos = ngos.filter(n => n.status === "Approved");
 
   const handleApprove = (id: string) => {
-    approveNgo(id);
+    approveNgo(String(id));
   };
 
   return (
