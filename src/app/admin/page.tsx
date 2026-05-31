@@ -9,7 +9,7 @@ export default function AdminDashboard() {
   const pendingNgos = ngos.filter(n => n.status === "Pending");
   const approvedNgos = ngos.filter(n => n.status === "Approved");
 
-  const handleApprove = (id: number) => {
+  const handleApprove = (id: string) => {
     approveNgo(id);
   };
 
