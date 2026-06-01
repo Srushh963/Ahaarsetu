@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Mail, Phone, MapPin, Send, CheckCircle2, ShieldAlert } from "lucide-react";
+import { createClient } from "@/utils/supabase/client";
 
 export default function ContactPage() {
   const [form, setForm] = useState({
@@ -11,19 +12,45 @@ export default function ContactPage() {
     message: ""
   });
 
-  const [status, setStatus] = useState<"idle" | "submitting" | "success">("idle");
+  const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
   const [ticketId, setTicketId] = useState(0);
+  const [errorMsg, setErrorMsg] = useState("");
+  
+  const supabase = createClient();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatus("submitting");
-    setTimeout(() => {
-      setTicketId(Math.floor(Math.random() * 90000) + 10000);
+    setErrorMsg("");
+
+    try {
+      const { data, error } = await supabase
+        .from("contact_messages")
+        .insert({
+          name: form.name,
+          email: form.email,
+          subject: form.subject,
+          message: form.message
+        })
+        .select("id")
+        .single();
+
+      if (error) throw error;
+
+      if (data) {
+        setTicketId(data.id);
+      }
+      
       setStatus("success");
       setForm({ name: "", email: "", subject: "general", message: "" });
-      // Reset success state after 6 seconds
-      setTimeout(() => setStatus("idle"), 6000);
-    }, 1500);
+      
+      // Reset success state after 8 seconds
+      setTimeout(() => setStatus("idle"), 8000);
+    } catch (error: any) {
+      console.error("Error submitting contact form:", error);
+      setErrorMsg("Failed to send message. Please try again.");
+      setStatus("error");
+    }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -48,6 +75,11 @@ export default function ContactPage() {
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-5">
+                {status === "error" && (
+                  <div className="p-3 text-xs text-red-600 bg-red-50 dark:bg-red-900/20 dark:text-red-400 rounded-xl font-bold text-center">
+                    {errorMsg}
+                  </div>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <label htmlFor="name" className="text-xs font-bold text-stone-700 dark:text-stone-300 uppercase tracking-wider">
