@@ -157,6 +157,9 @@ export function DonationProvider({ children }: { children: ReactNode }) {
   };
 
   const acceptDonation = async (id: number, volunteerName: string) => {
+    // Optimistic update for demo purposes
+    setDonations(prev => prev.map(d => d.id === id ? { ...d, status: "In Transit", volunteerAssigned: volunteerName || "Volunteer" } : d));
+
     // Get current user id
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -178,6 +181,9 @@ export function DonationProvider({ children }: { children: ReactNode }) {
   };
 
   const claimDonation = async (id: number) => {
+    // Optimistic update for demo purposes
+    setDonations(prev => prev.map(d => d.id === id ? { ...d, status: "Delivered" } : d));
+
     try {
       const { error } = await supabase
         .from("donations")
@@ -195,6 +201,9 @@ export function DonationProvider({ children }: { children: ReactNode }) {
   const registerNgo = (data: Omit<NGO, "id" | "status">) => {};
 
   const approveNgo = async (id: string) => {
+    // Optimistic update for demo purposes
+    setNgos(prev => prev.map(n => n.id === id ? { ...n, status: "Approved" } : n));
+
     try {
       const { error } = await supabase
         .from("profiles")

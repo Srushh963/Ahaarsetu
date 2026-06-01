@@ -1,8 +1,11 @@
 "use client";
 
 import { useDonations } from "@/context/DonationContext";
-import { Truck, Map, Navigation, CheckCircle2, BellRing } from "lucide-react";
+import { Truck, Map as MapIcon, Navigation, CheckCircle2, BellRing } from "lucide-react";
 import { useState, useEffect } from "react";
+import dynamic from "next/dynamic";
+
+const MapComponent = dynamic(() => import("@/components/MapComponent"), { ssr: false });
 
 export default function VolunteerDashboard() {
   const { donations, acceptDonation } = useDonations();
@@ -32,6 +35,16 @@ export default function VolunteerDashboard() {
   const handleAcceptTask = (id: number) => {
     acceptDonation(id, "Alex (Volunteer)");
   };
+
+  // Generate mock map locations for active tasks
+  const mapLocations = activeTasks.flatMap((task, i) => {
+    // Slight random offset for mock coordinates based on id
+    const offset = (task.id % 10) * 0.05;
+    return [
+      { lat: 22.5726 + offset, lng: 88.3639 - offset, title: `Pickup: ${task.donorName}`, description: task.pickupAddress, type: "pickup" as const },
+      { lat: 22.5826 + offset, lng: 88.3739 - offset, title: `Dropoff: ${task.deliveryNGO}`, description: task.ngoAddress, type: "dropoff" as const }
+    ];
+  });
 
   return (
     <div className="min-h-screen bg-stone-50 dark:bg-stone-950 py-12">
@@ -68,7 +81,7 @@ export default function VolunteerDashboard() {
           
           <div className="bg-white dark:bg-stone-900 rounded-3xl p-6 border border-stone-200 dark:border-stone-800 shadow-sm flex items-center space-x-4">
             <div className="w-14 h-14 rounded-2xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
-              <Map className="w-7 h-7" />
+              <MapIcon className="w-7 h-7" />
             </div>
             <div>
               <p className="text-sm font-bold text-stone-500 dark:text-stone-400 uppercase tracking-wider">Distance (KM)</p>
@@ -127,7 +140,7 @@ export default function VolunteerDashboard() {
                             </div>
                           </div>
                           <div className="flex items-start gap-2 text-xs text-stone-600 dark:text-stone-300">
-                            <Map className="w-4 h-4 mt-0.5 text-orange-500 shrink-0" />
+                            <MapIcon className="w-4 h-4 mt-0.5 text-orange-500 shrink-0" />
                             <div>
                               <span className="font-bold text-stone-900 dark:text-white block">Delivery: {task.deliveryNGO}</span>
                               <span>{task.ngoAddress}</span>
@@ -200,7 +213,7 @@ export default function VolunteerDashboard() {
                             </div>
                           </div>
                           <div className="flex items-start gap-2 text-xs text-stone-600 dark:text-stone-300">
-                            <Map className="w-4 h-4 mt-0.5 text-orange-500 shrink-0" />
+                            <MapIcon className="w-4 h-4 mt-0.5 text-orange-500 shrink-0" />
                             <div>
                               <span className="font-bold text-stone-900 dark:text-white block">Delivery: {task.deliveryNGO}</span>
                               <span>{task.ngoAddress}</span>
@@ -225,6 +238,18 @@ export default function VolunteerDashboard() {
             </table>
           </div>
         </div>
+
+        {/* Live Tracking Map Section */}
+        {activeTasks.length > 0 && (
+          <div className="bg-white dark:bg-stone-900 rounded-3xl border border-stone-200 dark:border-stone-800 shadow-sm overflow-hidden w-full">
+            <div className="p-6 sm:p-8 border-b border-stone-200 dark:border-stone-800 flex justify-between items-center">
+              <h2 className="text-xl font-bold text-stone-900 dark:text-white">Live Tracking Map</h2>
+            </div>
+            <div className="p-4">
+              <MapComponent locations={mapLocations} />
+            </div>
+          </div>
+        )}
         
       </main>
     </div>
