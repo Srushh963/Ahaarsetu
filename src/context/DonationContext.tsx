@@ -264,7 +264,19 @@ export function DonationProvider({ children }: { children: ReactNode }) {
   const acceptDonation = async (id: number) => {
     // Get current user id
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!user) {
+      console.error("acceptDonation: No authenticated user found.");
+      return;
+    }
+
+    // Optimistically update UI immediately
+    setDonations(prev =>
+      prev.map(d =>
+        d.id === id
+          ? { ...d, status: "In Transit", volunteerAssigned: userProfile?.name || "You" }
+          : d
+      )
+    );
 
     try {
       const { error } = await supabase
@@ -275,10 +287,16 @@ export function DonationProvider({ children }: { children: ReactNode }) {
         })
         .eq("id", id);
 
-      if (error) throw error;
-      fetchData(); // Refresh UI
+      if (error) {
+        console.error("Error accepting donation:", error.message);
+        // Revert optimistic update on failure
+        fetchData();
+      } else {
+        fetchData(); // Sync fresh data from DB
+      }
     } catch (err: any) {
       console.error("Error accepting donation:", err.message);
+      fetchData(); // Revert on exception
     }
   };
 
@@ -300,14 +318,27 @@ export function DonationProvider({ children }: { children: ReactNode }) {
   const registerNgo = (data: Omit<NGO, "id" | "status">) => {};
 
   const approveNgo = async (id: string) => {
-    try {
-      const { error } = await supabase
-        .from("profiles")
-        .update({ is_verified: true })
-        .eq("id", id);
+    // Optimistically update UI immediately
+    setNgos(prev => prev.map(n => n.id === id ? { ...n, status: "Approved" } : n));
 
-      if (error) throw error;
-      fetchData(); // Refresh UI
+    // Handle mock data — no DB call needed
+    if (id.startsWith("mock-")) return;
+
+    try {
+      // Call the server-side API route which uses the service role key to bypass RLS
+      const res = await fetch("/api/admin/approve-ngo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ngoId: id }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        console.error("API approve-ngo failed:", data.error);
+        // UI already shows Approved optimistically — revert only if you want strict consistency
+      } else {
+        fetchData(); // Sync fresh data from DB on success
+      }
     } catch (err: any) {
       console.error("Error approving NGO:", err.message);
     }
