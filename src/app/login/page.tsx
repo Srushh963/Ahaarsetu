@@ -27,8 +27,25 @@ export default function LoginPage() {
         setErrorMsg("Invalid Admin Credentials. Access Denied.");
         return;
       }
+      
+      setStatus("submitting");
+      
+      try {
+        // Attempt to get an authenticated session for Supabase RLS
+        await supabase.auth.signInWithPassword({
+          email: form.email,
+          password: form.password,
+        });
+      } catch (err) {
+        console.warn("Admin Supabase auth failed. RLS might block data if policy is strictly 'authenticated'. Using fallback.");
+      }
+
+      // Set the admin auth cookie so that middleware and layout context recognize the admin session
+      document.cookie = "admin_auth=true; path=/; max-age=86400; SameSite=Lax";
       setStatus("success");
-      setTimeout(() => router.push("/admin"), 1500);
+      setTimeout(() => {
+        window.location.href = "/admin";
+      }, 1500);
       return;
     }
 

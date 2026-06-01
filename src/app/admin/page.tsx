@@ -2,9 +2,34 @@
 
 import { useDonations } from "@/context/DonationContext";
 import { ShieldCheck, Building, CheckCircle2, Clock } from "lucide-react";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 export default function AdminDashboard() {
-  const { ngos, approveNgo } = useDonations();
+  const { ngos, approveNgo, userProfile, userLoading } = useDonations();
+  const router = useRouter();
+
+  // Auth and Role check
+  useEffect(() => {
+    if (!userLoading && (!userProfile || userProfile.role !== "admin")) {
+      router.push("/login");
+    }
+  }, [userProfile, userLoading, router]);
+
+  if (userLoading) {
+    return (
+      <div className="min-h-screen bg-stone-50 dark:bg-stone-950 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 border-4 border-purple-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-xs text-stone-500">Loading admin panel...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!userProfile || userProfile.role !== "admin") {
+    return null;
+  }
 
   const pendingNgos = ngos.filter(n => n.status === "Pending");
   const approvedNgos = ngos.filter(n => n.status === "Approved");
@@ -14,7 +39,7 @@ export default function AdminDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-stone-50 dark:bg-stone-950 py-12">
+    <div className="min-h-screen bg-stone-50 dark:bg-stone-955 py-12">
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
         
         {/* Header */}
@@ -24,14 +49,16 @@ export default function AdminDashboard() {
           </div>
           <div>
             <h1 className="text-3xl font-extrabold text-stone-900 dark:text-white">Admin Portal</h1>
-            <p className="text-stone-600 dark:text-stone-400 mt-1">Manage network verifications and audits</p>
+            <p className="text-stone-600 dark:text-stone-400 mt-1">
+              Welcome, <span className="font-bold text-stone-900 dark:text-white">{userProfile.name}</span>. Manage network verifications and audits.
+            </p>
           </div>
         </div>
 
         {/* Statistics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-white dark:bg-stone-900 rounded-3xl p-6 border border-stone-200 dark:border-stone-800 shadow-sm flex items-center space-x-4">
-            <div className="w-14 h-14 rounded-2xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center text-amber-600 dark:text-amber-400">
+          <div className="bg-white dark:bg-stone-900 rounded-3xl p-6 border border-stone-200 dark:border-stone-850 shadow-sm flex items-center space-x-4">
+            <div className="w-14 h-14 rounded-2xl bg-amber-100 dark:bg-amber-950/30 flex items-center justify-center text-amber-600 dark:text-amber-400">
               <Clock className="w-7 h-7" />
             </div>
             <div>
@@ -40,8 +67,8 @@ export default function AdminDashboard() {
             </div>
           </div>
           
-          <div className="bg-white dark:bg-stone-900 rounded-3xl p-6 border border-stone-200 dark:border-stone-800 shadow-sm flex items-center space-x-4">
-            <div className="w-14 h-14 rounded-2xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+          <div className="bg-white dark:bg-stone-900 rounded-3xl p-6 border border-stone-200 dark:border-stone-850 shadow-sm flex items-center space-x-4">
+            <div className="w-14 h-14 rounded-2xl bg-emerald-100 dark:bg-emerald-955/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
               <CheckCircle2 className="w-7 h-7" />
             </div>
             <div>
@@ -52,7 +79,7 @@ export default function AdminDashboard() {
         </div>
 
         {/* Pending NGOs Table */}
-        <div className="bg-white dark:bg-stone-900 rounded-3xl border border-stone-200 dark:border-stone-800 shadow-sm overflow-hidden w-full">
+        <div className="bg-white dark:bg-stone-900 rounded-3xl border border-stone-200 dark:border-stone-850 shadow-sm overflow-hidden w-full">
           <div className="p-6 sm:p-8 border-b border-stone-200 dark:border-stone-800 flex justify-between items-center">
             <h2 className="text-xl font-bold text-stone-900 dark:text-white">Action Required: Pending Approvals</h2>
           </div>
@@ -77,7 +104,7 @@ export default function AdminDashboard() {
                   </tr>
                 ) : (
                   pendingNgos.map((ngo) => (
-                    <tr key={ngo.id} className="hover:bg-stone-50 dark:hover:bg-stone-950/50 transition-colors">
+                    <tr key={ngo.id} className="hover:bg-stone-50 dark:hover:bg-stone-955/50 transition-colors">
                       <td className="px-6 py-4">
                         <p className="text-sm font-bold text-stone-900 dark:text-white flex items-center gap-1.5">
                           <Building className="w-4 h-4 text-stone-400" />
@@ -91,18 +118,18 @@ export default function AdminDashboard() {
                         </span>
                       </td>
                       <td className="px-6 py-4">
-                        <p className="text-xs text-stone-600 dark:text-stone-300">{ngo.email}</p>
-                        <p className="text-xs text-stone-600 dark:text-stone-300">{ngo.phone}</p>
+                        <p className="text-xs text-stone-605 dark:text-stone-300">{ngo.email}</p>
+                        <p className="text-xs text-stone-605 dark:text-stone-300">{ngo.phone}</p>
                       </td>
                       <td className="px-6 py-4">
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
                           Pending Audit
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right">
                         <button
                           onClick={() => handleApprove(ngo.id)}
-                          className="inline-flex items-center justify-center rounded-xl bg-white text-stone-900 border border-stone-200 shadow-sm hover:bg-stone-50 dark:bg-stone-900 dark:text-white dark:border-stone-700 dark:hover:bg-stone-800 text-xs font-bold px-4 py-2 transition-all duration-300"
+                          className="inline-flex items-center justify-center rounded-xl bg-white text-stone-900 border border-stone-200 shadow-sm hover:bg-stone-50 dark:bg-stone-900 dark:text-white dark:border-stone-700 dark:hover:bg-stone-850 text-xs font-bold px-4 py-2 transition-all duration-300 cursor-pointer"
                         >
                           Approve & Verify
                         </button>

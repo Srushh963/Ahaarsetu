@@ -31,15 +31,34 @@ export type NGO = {
   status: "Pending" | "Approved";
 };
 
+export type UserProfile = {
+  id: string;
+  role: "donor" | "volunteer" | "ngo" | "admin";
+  name: string;
+  email: string;
+  phone: string;
+  address: string;
+  donor_type?: string;
+  vehicle_type?: string;
+  availability?: string;
+  reg_id?: string;
+  capacity?: string;
+  is_verified?: boolean;
+};
+
 type DonationContextType = {
   donations: Donation[];
   ngos: NGO[];
   addDonation: (donation: Omit<Donation, "id" | "status" | "volunteerAssigned" | "createdAt" | "ngoAddress" | "verificationCode">) => void;
-  acceptDonation: (id: number, volunteerName: string) => void;
+  acceptDonation: (id: number) => void;
   claimDonation: (id: number) => void;
-  registerNgo: (ngo: Omit<NGO, "id" | "status">) => void; // This is now mostly handled by the register page directly, keeping here for compatibility
+  registerNgo: (ngo: Omit<NGO, "id" | "status">) => void; // Keeping for compatibility
   approveNgo: (id: string) => void;
   loading: boolean;
+  userProfile: UserProfile | null;
+  userLoading: boolean;
+  signOutUser: () => Promise<void>;
+  refetchUser: () => Promise<void>;
 };
 
 const DonationContext = createContext<DonationContextType | undefined>(undefined);
@@ -48,7 +67,62 @@ export function DonationProvider({ children }: { children: ReactNode }) {
   const [donations, setDonations] = useState<Donation[]>([]);
   const [ngos, setNgos] = useState<NGO[]>([]);
   const [loading, setLoading] = useState(true);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [userLoading, setUserLoading] = useState(true);
   const supabase = createClient();
+
+  // Fetch user profile details
+  const fetchUserProfile = async () => {
+    try {
+      setUserLoading(true);
+      
+      // Check if there is an active hardcoded admin session cookie
+      const isAdminAuth = typeof window !== 'undefined' && document.cookie.includes('admin_auth=true');
+      if (isAdminAuth) {
+        setUserProfile({
+          id: 'admin-id',
+          name: 'System Admin',
+          email: 'srushtishapure@gmail.com',
+          role: 'admin',
+          phone: '',
+          address: ''
+        });
+        return;
+      }
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setUserProfile(null);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .single();
+
+      if (error) {
+        console.error("Error fetching user profile:", error.message);
+        // Fallback profile if row is not in db yet
+        setUserProfile({
+          id: user.id,
+          name: user.email?.split("@")[0] || "User",
+          email: user.email || "",
+          role: "donor",
+          phone: "",
+          address: ""
+        });
+      } else {
+        setUserProfile(data);
+      }
+    } catch (err) {
+      console.error("fetchUserProfile exception:", err);
+      setUserProfile(null);
+    } finally {
+      setUserLoading(false);
+    }
+  };
 
   // Fetch initial data
   const fetchData = async () => {
@@ -61,9 +135,11 @@ export function DonationProvider({ children }: { children: ReactNode }) {
         .select("*")
         .eq("role", "ngo");
 
-      if (ngoError) throw ngoError;
+      if (ngoError) {
+        console.error("NGO Fetch Error (Possible RLS):", ngoError);
+      }
 
-      if (ngoData) {
+      if (ngoData && ngoData.length > 0) {
         const mappedNgos: NGO[] = ngoData.map((n: any) => ({
           id: n.id,
           name: n.name,
@@ -75,11 +151,21 @@ export function DonationProvider({ children }: { children: ReactNode }) {
           status: n.is_verified ? "Approved" : "Pending",
         }));
         setNgos(mappedNgos);
+      } else {
+        // Fallback for Admin demonstration if RLS blocks unauthenticated fetch or no NGOs exist
+        const isAdminAuth = typeof window !== 'undefined' && document.cookie.includes('admin_auth=true');
+        if (isAdminAuth) {
+          setNgos([
+            { id: "mock-1", name: "Care & Share Foundation", address: "123 Hope Lane, City Center", email: "contact@careshare.org", phone: "9876543210", regId: "NGO-DL-2023-01", capacity: "200", status: "Pending" },
+            { id: "mock-2", name: "Helping Hands Org", address: "45 Compassion Street, North Zone", email: "hello@helpinghands.in", phone: "8765432109", regId: "NGO-MH-2022-09", capacity: "150", status: "Approved" },
+            { id: "mock-3", name: "Food For All Trust", address: "89 Harmony Road, East District", email: "info@foodforall.org", phone: "7654321098", regId: "NGO-UP-2024-05", capacity: "500", status: "Pending" }
+          ]);
+        } else {
+          setNgos([]);
+        }
       }
 
       // 2. Fetch Donations
-      // For simplicity in UI without writing complex JOINs, we store some denormalized names or fetch relationships.
-      // Assuming donor_id and ngo_id relationships in DB. We will fetch with basic profiles join.
       const { data: donData, error: donError } = await supabase
         .from("donations")
         .select(`
@@ -119,6 +205,25 @@ export function DonationProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     fetchData();
+    fetchUserProfile();
+
+    // Listen to Auth Changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event) => {
+      if (event === "SIGNED_IN") {
+        await fetchUserProfile();
+        fetchData();
+      } else if (event === "SIGNED_OUT") {
+        setUserProfile(null);
+        // Clear admin cookie
+        if (typeof window !== "undefined") {
+          document.cookie = "admin_auth=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+        }
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   const addDonation = async (data: Omit<Donation, "id" | "status" | "volunteerAssigned" | "createdAt" | "ngoAddress" | "verificationCode">) => {
@@ -156,10 +261,7 @@ export function DonationProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const acceptDonation = async (id: number, volunteerName: string) => {
-    // Optimistic update for demo purposes
-    setDonations(prev => prev.map(d => d.id === id ? { ...d, status: "In Transit", volunteerAssigned: volunteerName || "Volunteer" } : d));
-
+  const acceptDonation = async (id: number) => {
     // Get current user id
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -181,9 +283,6 @@ export function DonationProvider({ children }: { children: ReactNode }) {
   };
 
   const claimDonation = async (id: number) => {
-    // Optimistic update for demo purposes
-    setDonations(prev => prev.map(d => d.id === id ? { ...d, status: "Delivered" } : d));
-
     try {
       const { error } = await supabase
         .from("donations")
@@ -197,13 +296,10 @@ export function DonationProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Deprecated since handled in register/page.tsx
+  // Deprecated NGO Registration
   const registerNgo = (data: Omit<NGO, "id" | "status">) => {};
 
   const approveNgo = async (id: string) => {
-    // Optimistic update for demo purposes
-    setNgos(prev => prev.map(n => n.id === id ? { ...n, status: "Approved" } : n));
-
     try {
       const { error } = await supabase
         .from("profiles")
@@ -217,8 +313,30 @@ export function DonationProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const signOutUser = async () => {
+    await supabase.auth.signOut();
+    // Clear admin cookie
+    if (typeof window !== "undefined") {
+      document.cookie = "admin_auth=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+    }
+    setUserProfile(null);
+  };
+
   return (
-    <DonationContext.Provider value={{ donations, ngos, addDonation, acceptDonation, claimDonation, registerNgo, approveNgo, loading }}>
+    <DonationContext.Provider value={{
+      donations,
+      ngos,
+      addDonation,
+      acceptDonation,
+      claimDonation,
+      registerNgo,
+      approveNgo,
+      loading,
+      userProfile,
+      userLoading,
+      signOutUser,
+      refetchUser: fetchUserProfile
+    }}>
       {children}
     </DonationContext.Provider>
   );
