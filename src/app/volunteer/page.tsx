@@ -68,15 +68,66 @@ export default function VolunteerDashboard() {
     acceptDonation(id);
   };
 
-  // Generate mock map locations for active tasks
-  const mapLocations = activeTasks.flatMap((task, i) => {
-    // Slight random offset for mock coordinates based on id
-    const offset = (task.id % 10) * 0.05;
-    return [
-      { lat: 22.5726 + offset, lng: 88.3639 - offset, title: `Pickup: ${task.donorName}`, description: task.pickupAddress, type: "pickup" as const },
-      { lat: 22.5826 + offset, lng: 88.3739 - offset, title: `Dropoff: ${task.deliveryNGO}`, description: task.ngoAddress, type: "dropoff" as const }
-    ];
-  });
+  const [mapLocations, setMapLocations] = useState<{ lat: number; lng: number; title: string; description: string; type: "pickup" | "dropoff" }[]>([]);
+
+  useEffect(() => {
+    const geocodeAddress = async (address: string): Promise<{ lat: number; lng: number } | null> => {
+      if (!address) return null;
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`);
+        const data = await res.json();
+        if (data && data.length > 0) {
+          return {
+            lat: parseFloat(data[0].lat),
+            lng: parseFloat(data[0].lon)
+          };
+        }
+      } catch (err) {
+        console.error("Geocoding failed for:", address, err);
+      }
+      return null;
+    };
+
+    const fetchCoordinates = async () => {
+      if (activeTasks.length === 0) {
+        setMapLocations([]);
+        return;
+      }
+
+      const locations: { lat: number; lng: number; title: string; description: string; type: "pickup" | "dropoff" }[] = [];
+
+      for (const task of activeTasks) {
+        const offset = (task.id % 10) * 0.005;
+        // Belagavi, Karnataka default coordinates
+        const defaultLat = 15.8497;
+        const defaultLng = 74.4977;
+
+        // Geocode pickup address
+        const pickupCoords = await geocodeAddress(task.pickupAddress);
+        locations.push({
+          lat: pickupCoords ? pickupCoords.lat : defaultLat + offset,
+          lng: pickupCoords ? pickupCoords.lng : defaultLng - offset,
+          title: `Pickup: ${task.donorName}`,
+          description: task.pickupAddress,
+          type: "pickup" as const
+        });
+
+        // Geocode dropoff address (ngoAddress)
+        const dropoffCoords = await geocodeAddress(task.ngoAddress);
+        locations.push({
+          lat: dropoffCoords ? dropoffCoords.lat : (pickupCoords ? pickupCoords.lat : defaultLat) + 0.01 + offset,
+          lng: dropoffCoords ? dropoffCoords.lng : (pickupCoords ? pickupCoords.lng : defaultLng) + 0.01 - offset,
+          title: `Dropoff: ${task.deliveryNGO}`,
+          description: task.ngoAddress,
+          type: "dropoff" as const
+        });
+      }
+
+      setMapLocations(locations);
+    };
+
+    fetchCoordinates();
+  }, [activeTasks]);
 
   return (
     <div className="min-h-screen bg-stone-50 dark:bg-stone-950 py-12">

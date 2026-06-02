@@ -50,29 +50,46 @@ function RegisterFormContent() {
         password: commonFields.password,
         options: {
           emailRedirectTo: `${window.location.origin}/auth/callback`,
+          data: {
+            name: commonFields.name,
+            phone: commonFields.phone,
+            role: role,
+            address: commonFields.address,
+            donor_type: role === "donor" ? donorType : null,
+            vehicle_type: role === "volunteer" ? vehicleType : null,
+            availability: role === "volunteer" ? availability : null,
+            reg_id: role === "ngo" ? ngoRegId : null,
+            capacity: role === "ngo" ? ngoCapacity : null,
+          }
         }
       });
 
       if (authError) throw authError;
       if (!authData.user) throw new Error("Could not create user account. Please try again.");
 
-      // 2. Call the secure RPC function to insert the profile
-      // This works even before email is confirmed because the function uses SECURITY DEFINER
-      const { error: profileError } = await supabase.rpc("create_user_profile", {
-        user_id: authData.user.id,
-        user_role: role,
-        user_name: commonFields.name,
-        user_email: commonFields.email,
-        user_phone: commonFields.phone,
-        user_address: commonFields.address,
-        p_donor_type: role === "donor" ? donorType : null,
-        p_vehicle_type: role === "volunteer" ? vehicleType : null,
-        p_availability: role === "volunteer" ? availability : null,
-        p_reg_id: role === "ngo" ? ngoRegId : null,
-        p_capacity: role === "ngo" ? ngoCapacity : null,
+      // 2. Call the secure API route to insert/upsert the profile using admin client (bypasses RLS)
+      const profileRes = await fetch("/api/auth/create-profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: authData.user.id,
+          role: role,
+          name: commonFields.name,
+          email: commonFields.email,
+          phone: commonFields.phone,
+          address: commonFields.address,
+          donorType: role === "donor" ? donorType : null,
+          vehicleType: role === "volunteer" ? vehicleType : null,
+          availability: role === "volunteer" ? availability : null,
+          regId: role === "ngo" ? ngoRegId : null,
+          capacity: role === "ngo" ? ngoCapacity : null,
+        }),
       });
 
-      if (profileError) throw profileError;
+      if (!profileRes.ok) {
+        const errData = await profileRes.json();
+        throw new Error(errData.error || "Failed to create user profile database record.");
+      }
 
       setStatus("success");
     } catch (err: any) {

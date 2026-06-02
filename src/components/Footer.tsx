@@ -63,16 +63,16 @@ export default function Footer() {
           <ul className="space-y-3 text-sm">
             <li className="flex items-start gap-3">
               <MapPin className="w-5 h-5 text-primary shrink-0" />
-              <span>abc street,121.</span>
+              <span>Belagavi,karnataka</span>
             </li>
             <li className="flex items-center gap-3">
               <Phone className="w-5 h-5 text-primary shrink-0" />
-              <span>+91 33 2456 7890</span>
+              <span>+91 9380900293</span>
             </li>
             <li className="flex items-center gap-3">
               <Mail className="w-5 h-5 text-primary shrink-0" />
-              <a href="mailto:support@aaharsetu.org" className="hover:text-white hover:underline transition-colors">
-                support@aaharsetu.org
+              <a href="mailto:srushtishapure@gmail.com" className="hover:text-white hover:underline transition-colors">
+                srushtishapure@gmail.com
               </a>
             </li>
           </ul>
